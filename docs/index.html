@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lua Wordle Solver</title>
+<meta name="description" content="A minimax Wordle solver: C core compiled to WebAssembly, ported from a LÖVE / LuaJIT FFI app.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #141419; --panel: #1b1b22; --line: #2a2a33; --text: #e6e6ea; --dim: #7c7c88;
+    --gray: #3a3a42; --yellow: #c9a43a; --green: #4f9a4a; --blue: #4fc3f7; --amber: #ffcc33;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 'JetBrains Mono', ui-monospace, monospace; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 18px; margin: 0; font-weight: 700; }
+  .sub { color: var(--dim); margin: 4px 0 24px; }
+  .sub a { color: var(--blue); }
+  .stats { display: flex; gap: 24px; flex-wrap: wrap; color: var(--dim); margin-bottom: 20px; }
+  .stats b { color: var(--text); font-weight: 400; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  #status { text-align: center; margin-bottom: 16px; min-height: 1.5em; }
+  #status.calc { color: var(--amber); }
+  #status.ok { color: var(--blue); }
+  #status.solved { color: #7ee07a; }
+  #status.err { color: #ff6b6b; }
+  .tiles { display: flex; justify-content: center; gap: 8px; }
+  .tile { width: 56px; height: 56px; display: grid; place-items: center; font-size: 26px; font-weight: 700;
+    border-radius: 6px; border: 2px solid var(--line); background: var(--gray); color: #fff; cursor: pointer;
+    user-select: none; font-family: inherit; padding: 0; }
+  .tile[data-s="1"] { background: var(--yellow); border-color: var(--yellow); }
+  .tile[data-s="2"] { background: var(--green); border-color: var(--green); }
+  .tile.cursor { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .tile:disabled { cursor: default; }
+  .hint { text-align: center; color: var(--dim); margin: 14px 0 0; font-size: 12px; }
+  .actions { display: flex; justify-content: center; gap: 10px; margin-top: 16px; }
+  button.btn { font: inherit; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 14px;
+    background: linear-gradient(135deg, rgba(79, 195, 247, 0.16), rgba(79, 195, 247, 0.04)); cursor: pointer; }
+  button.btn:hover { background: linear-gradient(135deg, rgba(79, 195, 247, 0.3), rgba(79, 195, 247, 0.1)); }
+  button.btn:disabled { opacity: 0.4; cursor: default; }
+  #words { display: flex; flex-wrap: wrap; gap: 4px 14px; color: rgba(255,255,255,0.3); font-size: 13px; }
+  #words .ans { color: rgba(128, 204, 255, 0.6); }
+  #words .best { color: var(--amber); }
+  .legend { color: var(--dim); font-size: 12px; margin-top: 12px; }
+  @media (max-width: 420px) { .tile { width: 48px; height: 48px; font-size: 22px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lua Wordle Solver</h1>
+  <p class="sub">Minimax solver with a C core compiled to WebAssembly. Ported from a LÖVE / LuaJIT FFI desktop app. <a href="https://github.com/ZahinTapadar/Wordle-Algorithm/tree/lua-implementation">source</a></p>
+
+  <div class="stats">
+    <span>remaining <b id="remaining">–</b></span>
+    <span>score <b id="score">–</b></span>
+    <span>wasm time <b id="time">–</b></span>
+  </div>
+
+  <div class="panel">
+    <div id="status" class="calc">loading core...</div>
+    <div class="tiles" id="tiles"></div>
+    <p class="hint">play the guess, then tap each tile to match Wordle's colours (or type 0 / 1 / 2) and press enter</p>
+    <div class="actions">
+      <button class="btn" id="submit" disabled>submit feedback</button>
+      <button class="btn" id="reset" disabled>new game</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div id="words"></div>
+    <div class="legend"><span style="color: rgba(128, 204, 255, 0.8)">blue</span> = official answer candidate · <span style="color: var(--amber)">amber</span> = suggested guess</div>
+  </div>
+</main>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const worker = new Worker('worker.js');
+  let state = 'LOADING', best = '', marks = [0, 0, 0, 0, 0], cursor = 0;
+
+  function renderTiles() {
+    const editable = state === 'WAITING_INPUT';
+    $('tiles').replaceChildren(...[...(best || '     ')].map((ch, i) => {
+      const t = document.createElement('button');
+      t.className = 'tile' + (editable && i === cursor ? ' cursor' : '');
+      t.textContent = ch.trim();
+      t.dataset.s = state === 'SOLVED' ? 2 : marks[i];
+      t.disabled = !editable;
+      t.onclick = () => { marks[i] = (marks[i] + 1) % 3; cursor = (i + 1) % 5; renderTiles(); };
+      return t;
+    }));
+    $('submit').disabled = !editable;
+  }
+
+  function setStatus(text, cls) {
+    $('status').textContent = text;
+    $('status').className = cls;
+  }
+
+  function calculating(text) {
+    state = 'CALCULATING';
+    setStatus(text, 'calc');
+    $('reset').disabled = true;
+    renderTiles();
+  }
+
+  worker.onmessage = ({ data }) => {
+    state = data.state;
+    $('remaining').textContent = data.remaining;
+    $('reset').disabled = false;
+    if (data.state === 'WAITING_INPUT') {
+      best = data.best;
+      marks = [0, 0, 0, 0, 0];
+      cursor = 0;
+      $('score').textContent = data.score;
+      $('time').textContent = data.ms.toFixed(1) + ' ms';
+      setStatus(`best guess: ${best}`, 'ok');
+    } else if (data.state === 'SOLVED') {
+      best = data.best;
+      setStatus(`solved! the word is ${best}`, 'solved');
+    } else {
+      setStatus('no words remaining. check your feedback.', 'err');
+    }
+    renderTiles();
+
+    const shown = data.words.slice(0, 300);
+    $('words').replaceChildren(...shown.map(([w, ans]) => {
+      const s = document.createElement('span');
+      s.textContent = w + (ans ? '*' : '');
+      if (w === best) s.className = 'best';
+      else if (ans) s.className = 'ans';
+      return s;
+    }));
+    if (data.words.length > shown.length) {
+      const more = document.createElement('span');
+      more.textContent = `... (+${data.words.length - shown.length} more)`;
+      $('words').append(more);
+    }
+  };
+
+  function submit() {
+    if (state !== 'WAITING_INPUT') return;
+    // Same encoding as FeedbackToPattern in wordle_core.lua: sum of digit * 3^i
+    const pattern = marks.reduce((p, m, i) => p + m * 3 ** i, 0);
+    calculating('recalculating minimax...');
+    worker.postMessage({ type: 'feedback', pattern });
+  }
+
+  $('submit').onclick = submit;
+  $('reset').onclick = () => { calculating('computing opening move...'); worker.postMessage({ type: 'reset' }); };
+
+  document.addEventListener('keydown', e => {
+    if (state !== 'WAITING_INPUT') return;
+    if (e.key === '0' || e.key === '1' || e.key === '2') {
+      marks[cursor] = Number(e.key);
+      cursor = Math.min(cursor + 1, 4);
+    } else if (e.key === 'Backspace') {
+      marks[cursor] = 0;
+      cursor = Math.max(cursor - 1, 0);
+    } else if (e.key === 'Enter') {
+      submit();
+      return;
+    } else return;
+    e.preventDefault();
+    renderTiles();
+  });
+
+  renderTiles();
+  calculating('computing opening move...');
+  worker.postMessage({ type: 'init' });
+</script>
+</body>
+</html>

@@ -1,5 +1,19 @@
+#ifdef WORDLE_WASM
+/* Freestanding WebAssembly build for the browser (no libc): provide the few
+ * routines the solver uses and load the word lists from memory, not files. */
+void *memset(void *d, int c, unsigned long n) {
+  unsigned char *p = d;
+  while (n--) *p++ = (unsigned char)c;
+  return d;
+}
+static int strcmp(const char *a, const char *b) {
+  while (*a && *a == *b) a++, b++;
+  return (unsigned char)*a - (unsigned char)*b;
+}
+#else
 #include <stdio.h>
 #include <string.h>
+#endif
 
 char w[13000][6], v[13000], q[13000];
 int N = 0, L[13000];
@@ -27,11 +41,70 @@ void init_tables() {
   }
 }
 
-int load_words(const char *allowed_path, const char *possible_path) {
+static void reset_words(void) {
   init_tables();
   N = 0;
   memset(v, 0, sizeof(v));
   memset(q, 0, sizeof(q));
+}
+
+static void add_allowed(const char *word) {
+  if (N >= 13000) return;
+  for (int i = 0; i < 5; i++) w[N][i] = word[i];
+  w[N][5] = '\0';
+  N++;
+}
+
+static int mark_possible(const char *word) {
+  for (int i = 0; i < N; i++) {
+    if (!strcmp(w[i], word)) {
+      v[i] = q[i] = 1;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+#ifdef WORDLE_WASM
+/* JS writes "<allowed words>\0<possible words>\0" here, then calls
+ * load_words_buf(). Afterwards the buffer doubles as scratch space. */
+char io_buf[131072];
+
+char *get_io_buf(void) { return io_buf; }
+
+/* Calls fn on each whitespace-separated 5-letter token; returns past the NUL. */
+static const char *each_word(const char *p, int (*fn)(const char *), int *count) {
+  char word[6];
+  while (*p) {
+    while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') p++;
+    int n = 0;
+    while (*p && *p != ' ' && *p != '\n' && *p != '\r' && *p != '\t') {
+      if (n < 5) word[n] = *p;
+      n++, p++;
+    }
+    if (n >= 5) {
+      word[5] = '\0';
+      *count += fn(word);
+    }
+  }
+  return p + 1;
+}
+
+static int add_allowed_counted(const char *word) {
+  add_allowed(word);
+  return 1;
+}
+
+int load_words_buf(void) {
+  int allowed = 0, possible = 0;
+  reset_words();
+  const char *p = each_word(io_buf, add_allowed_counted, &allowed);
+  each_word(p, mark_possible, &possible);
+  return N;
+}
+#else
+int load_words(const char *allowed_path, const char *possible_path) {
+  reset_words();
   
   FILE *f = fopen(allowed_path, "r");
   if (!f) {
@@ -42,8 +115,7 @@ int load_words(const char *allowed_path, const char *possible_path) {
   while (fscanf(f, "%15s", word_buf) == 1) {
     // Basic trimming and length safety
     word_buf[5] = '\0';
-    strcpy(w[N], word_buf);
-    N++;
+    add_allowed(word_buf);
   }
   fclose(f);
   printf("C Info: Loaded %d allowed words\n", N);
@@ -56,18 +128,13 @@ int load_words(const char *allowed_path, const char *possible_path) {
   int p_count = 0;
   while (fscanf(f, "%15s", word_buf) == 1) {
     word_buf[5] = '\0';
-    for (int i = 0; i < N; i++) {
-      if (!strcmp(w[i], word_buf)) {
-        v[i] = q[i] = 1;
-        p_count++;
-        break;
-      }
-    }
+    p_count += mark_possible(word_buf);
   }
   fclose(f);
   printf("C Info: Loaded %d possible words mapped to allowed list\n", p_count);
   return N;
 }
+#endif
 
 int filter_possible(int guess_idx, int target) {
   int act = 0;
