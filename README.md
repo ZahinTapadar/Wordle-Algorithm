@@ -1,8 +1,10 @@
-# Lua Wordle Solver
+# wortraum
 
-**[Try it in the browser →](https://zahintapadar.github.io/Wordle-Algorithm/)**
+*Wortraum*: German for "word space". An information-theoretic Wordle solver in Lua, C, and WebAssembly.
 
-A minimax Wordle solver. For every allowed word it buckets the remaining answers by the colour pattern that guess would produce, and picks the guess whose buckets are smallest (an entropy-style score), with a bonus for words that could themselves be the answer.
+**[Try it in the browser →](https://zahintapadar.github.io/wortraum/)**
+
+For every allowed word it buckets the remaining answers by the colour pattern that guess would produce, and picks the guess with the lowest Σ n·log₂ n over those buckets: the guess with the highest expected information. Words that could themselves be the answer get a bonus. The [devlog](https://zahin-tapadar.vercel.app/blog/making-a-wordle-solver-that-actually-thinks/) explains how it works.
 
 - `Lua-Wordle/` — the desktop app: a LÖVE / LuaJIT front end calling the C core (`wordle_core_c.c`) through FFI
 - `docs/` — the web version: the same C core compiled to WebAssembly, running in a Web Worker

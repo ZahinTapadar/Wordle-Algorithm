@@ -1,5 +1,5 @@
 #!/bin/sh
-# Compile the C minimax core to WebAssembly for the browser build in docs/.
+# Compile the wortraum C core to WebAssembly for the browser build in docs/.
 # Needs a clang with the wasm32 target (e.g. Homebrew llvm) and a wasm linker
 # (wasm-ld, or rust-lld from a Rust toolchain).
 set -e

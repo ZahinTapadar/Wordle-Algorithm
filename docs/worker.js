@@ -1,4 +1,4 @@
-// Runs the C minimax core (compiled to WebAssembly) off the main thread.
+// Runs the wortraum C core (compiled to WebAssembly) off the main thread.
 // Mirrors main.lua: compute the best guess, apply 0/1/2 feedback, repeat.
 
 let E, buf, words, count = 0;

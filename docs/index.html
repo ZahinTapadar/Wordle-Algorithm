@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lua Wordle Solver</title>
-<meta name="description" content="A minimax Wordle solver: C core compiled to WebAssembly, ported from a LÖVE / LuaJIT FFI app.">
+<title>wortraum</title>
+<meta name="description" content="wortraum: an information-theoretic Wordle solver in Lua, C, and WebAssembly.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -49,8 +49,8 @@
 </head>
 <body>
 <main>
-  <h1>Lua Wordle Solver</h1>
-  <p class="sub">Minimax solver with a C core compiled to WebAssembly. Ported from a LÖVE / LuaJIT FFI desktop app. <a href="https://github.com/ZahinTapadar/Wordle-Algorithm/tree/lua-implementation">source</a></p>
+  <h1>wortraum</h1>
+  <p class="sub">An information-theoretic Wordle solver in Lua, C, and WebAssembly. The C core runs here as WebAssembly, unchanged from the LÖVE / LuaJIT FFI desktop app. <a href="https://github.com/ZahinTapadar/wortraum/tree/lua-implementation">source</a></p>
 
   <div class="stats">
     <span>remaining <b id="remaining">–</b></span>
@@ -143,7 +143,7 @@
     if (state !== 'WAITING_INPUT') return;
     // Same encoding as FeedbackToPattern in wordle_core.lua: sum of digit * 3^i
     const pattern = marks.reduce((p, m, i) => p + m * 3 ** i, 0);
-    calculating('recalculating minimax...');
+    calculating('recalculating...');
     worker.postMessage({ type: 'feedback', pattern });
   }
 

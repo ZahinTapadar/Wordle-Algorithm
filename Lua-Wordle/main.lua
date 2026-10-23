@@ -1,4 +1,5 @@
 love.window.setMode(1200, 800, {vsync=0})
+love.window.setTitle("wortraum")
 
 local m = require("wordle_core")
 
@@ -31,7 +32,7 @@ function love.update(dt)
     if state == "CALCULATING" then
         local start = love.timer.getTime()
         
-        -- Run the Native C Minimax Score
+        -- Score every guess in the native C core
         local b_idx, b_score = m.CalculateBestMove()
         best_word = string.upper(m.GetWord(b_idx))
         best_score = b_score
@@ -76,7 +77,7 @@ function love.keypressed(key)
             else
                 feedback_input = ""
                 state = "CALCULATING"
-                message = "Recalculating Minimax Tree (Native)..."
+                message = "Recalculating (native)..."
             end
         else
             if (key == "0" or key == "1" or key == "2") and #feedback_input < 5 then
@@ -91,7 +92,7 @@ function love.draw()
     
     -- Telemetry
     love.graphics.setColor(1, 1, 1)
-    love.graphics.print("Systems-Level Wordle Oracle (Native FFI C-Core)", 20, 20)
+    love.graphics.print("wortraum (native C core via LuaJIT FFI)", 20, 20)
     love.graphics.print(string.format("Possible Words Remaining: %d", active_count), 20, 50)
     love.graphics.print("FPS: " .. love.timer.getFPS(), 20, 80)
     
